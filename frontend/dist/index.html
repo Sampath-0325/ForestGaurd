@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ForestGuard — Real-Time Deforestation Monitoring</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0d1419;
+      --bg-panel: #141f2a;
+      --bg-elevated: #1a2836;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-blue: #3b82f6;
+      --text-primary: #f1f5f9;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --font-sans: 'Outfit', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); background: var(--bg-dark); color: var(--text-primary); height: 100vh; overflow: hidden; }
+
+    .app {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      grid-column: 1 / -1;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 1.5rem;
+      gap: 1rem;
+    }
+    .logo { font-weight: 700; font-size: 1.2rem; color: var(--accent-green); display: flex; align-items: center; gap: 0.5rem; }
+    .logo svg { width: 26px; height: 26px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); animation: pulse 2s infinite; display: inline-block; }
+    .status-dot.online { background: var(--accent-green); }
+    .status-dot.offline { background: var(--accent-red); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.high { background: var(--accent-red); }
+    .dot.med  { background: var(--accent-amber); }
+    .dot.low  { background: var(--accent-green); }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 0.75rem;
+      grid-row: 2;
+      grid-column: 1;
+    }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── PANELS ── */
+    .panel {
+      background: var(--bg-elevated);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 0.75rem;
+      border: 1px solid var(--border);
+    }
+    .panel-header {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.6rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── DASHBOARD STATS ── */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }
+    .stat-card {
+      background: var(--bg-panel);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      border-left: 3px solid var(--accent-green);
+    }
+    .stat-card.danger { border-left-color: var(--accent-red); }
+    .stat-card.warn   { border-left-color: var(--accent-amber); }
+    .stat-label { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+    .stat-value { font-size: 1.2rem; font-weight: 700; font-family: var(--font-mono); }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.5rem 0.9rem; border-radius: 7px;
+      font-family: var(--font-sans); font-weight: 500; font-size: 0.85rem;
+      cursor: pointer; border: none; transition: all 0.15s;
+    }
+    .btn-primary  { background: var(--accent-green); color: var(--bg-dark); }
+    .btn-primary:hover { background: #0d9668; transform: translateY(-1px); }
+    .btn-danger   { background: var(--accent-red); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-ghost    { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--border); color: var(--text-primary); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-xs { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 5px; }
+
+    /* ── INPUTS ── */
+    input[type="text"], input[type="password"], input[type="url"], select {
+      width: 100%;
+      padding: 0.45rem 0.65rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-dark);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent-green); }
+
+    /* ── MAP ── */
+    main {
+      grid-row: 2;
+      grid-column: 2;
+      position: relative;
+      overflow: hidden;
+      height: 100%;
+    }
+    #map { width: 100%; height: 100%; background: #0a1219; }
+
+    #time-control {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(20,31,42,0.9);
+      padding: 0.4rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      backdrop-filter: blur(4px);
+    }
+    #time-control input[type=range] { width: 160px; accent-color: var(--accent-green); }
+    #year-label { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-green); min-width: 40px; }
+
+    /* ── AOI ITEMS ── */
+    .aoi-item {
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 0.4rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      background: var(--bg-panel);
+    }
+    .aoi-item:hover { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.3); }
+    .aoi-item.selected { background: rgba(16,185,129,0.12); border-color: var(--accent-green); }
+    .aoi-item-header { display: flex; justify-content: space-between; align-items: center; }
+    .aoi-name { font-weight: 600; font-size: 0.875rem; }
+    .risk-badge {
+      font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.5rem;
+      border-radius: 99px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .risk-badge.HIGH   { background: rgba(239,68,68,0.2);  color: #ef4444; }
+    .risk-badge.MEDIUM { background: rgba(245,158,11,0.2); color: #f59e0b; }
+    .risk-badge.LOW    { background: rgba(16,185,129,0.2); color: #10b981; }
+    .risk-badge.PENDING { background: rgba(148,163,184,0.2); color: #94a3b8; }
+    .risk-badge.UNKNOWN { background: rgba(148,163,184,0.2); color: #94a3b8; }
+    .aoi-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem; display: flex; gap: 1rem; }
+    .aoi-actions { display: flex; gap: 0.35rem; margin-top: 0.5rem; }
+
+    /* ── ALERT ITEMS ── */
+    .alert-item {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 0.5rem 0; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+    }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-left { flex: 1; }
+    .alert-risk { font-weight: 700; font-size: 0.78rem; }
+    .alert-risk.HIGH   { color: var(--accent-red); }
+    .alert-risk.MEDIUM { color: var(--accent-amber); }
+    .alert-risk.LOW    { color: var(--accent-green); }
+    .alert-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem; }
+    .confidence-bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 0.3rem; width: 100%; }
+    .confidence-fill { height: 100%; border-radius: 2px; background: var(--accent-green); transition: width 0.4s; }
+
+    /* ── NDVI CHART PANEL ── */
+    #ndvi-panel {
+      display: none;
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(13,20,25,0.97);
+      border-top: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      z-index: 500;
+      backdrop-filter: blur(8px);
+    }
+    #ndvi-panel.visible { display: block; }
+    .ndvi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .ndvi-title { font-weight: 600; font-size: 0.9rem; }
+    #ndvi-chart-container { height: 160px; position: relative; }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 2000;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; width: 480px; max-width: 90vw;
+    }
+    .modal-header { font-weight: 600; font-size: 1rem; margin-bottom: 1rem; display: flex; justify-content: space-between; }
+    .modal-body { display: flex; flex-direction: column; gap: 0.75rem; }
+    .form-group label { font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem; }
+
+    /* ── TABS ── */
+    .tabs { display: flex; gap: 0.25rem; margin-bottom: 0.75rem; }
+    .tab {
+      padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem;
+      cursor: pointer; color: var(--text-muted); background: transparent;
+      border: 1px solid transparent; transition: all 0.15s;
+    }
+    .tab.active { background: var(--bg-elevated); color: var(--text-primary); border-color: var(--border); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── USER TABLE ── */
+    .user-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.5rem 0; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+    }
+    .user-row:last-child { border-bottom: none; }
+    .role-tag {
+      font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 4px;
+      font-weight: 600; text-transform: uppercase;
+    }
+    .role-tag.admin    { background: rgba(59,130,246,0.2); color: #3b82f6; }
+    .role-tag.analyst  { background: rgba(16,185,129,0.2); color: #10b981; }
+    .role-tag.viewer   { background: rgba(148,163,184,0.2); color: #94a3b8; }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      padding: 0.7rem 1.25rem; border-radius: 8px; font-size: 0.875rem;
+      z-index: 3000; animation: fadeUp 0.3s ease;
+    }
+    .toast.success { background: var(--accent-green); color: var(--bg-dark); }
+    .toast.error   { background: var(--accent-red);   color: #fff; }
+    .toast.info    { background: var(--accent-blue);  color: #fff; }
+    @keyframes fadeUp { from { opacity:0; transform: translateX(-50%) translateY(8px) } to { opacity:1; transform: translateX(-50%) translateY(0) } }
+
+    .instruction { text-align: center; color: var(--text-muted); font-size: 0.82rem; padding: 0.75rem 0; }
+    .spinner-sm { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-green); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .leaflet-popup-content-wrapper { background: var(--bg-panel); color: var(--text-primary); border-radius: 8px; }
+    .leaflet-popup-tip { background: var(--bg-panel); }
+    .divider { height: 1px; background: var(--border); margin: 0.5rem 0; }
+    .auth-tab { flex:1; padding:0.4rem 0; background:transparent; border:none; color:var(--text-muted); font-size:0.78rem; font-weight:500; border-radius:6px; cursor:pointer; transition:all 0.15s; }
+    .auth-tab.active { background:var(--accent-green); color:#fff; font-weight:600; }
+    .auth-tab:hover:not(.active) { color:var(--text-primary); background:rgba(255,255,255,0.05); }
+
+    /* ── Chat bubble ──────────────────────────────────── */
+    #fg-chat-bubble {
+      position:fixed;bottom:28px;right:28px;z-index:9999;
+      width:56px;height:56px;border-radius:50%;
+      background:linear-gradient(135deg,#10b981,#06b6d4);
+      border:none;cursor:pointer;display:flex;align-items:center;
+      justify-content:center;box-shadow:0 4px 24px rgba(16,185,129,.4);
+      transition:transform .2s,box-shadow .2s;
+    }
+    #fg-chat-bubble:hover{transform:scale(1.1);box-shadow:0 8px 32px rgba(16,185,129,.6);}
+    #fg-chat-bubble .pulse-ring{
+      position:absolute;width:56px;height:56px;border-radius:50%;
+      border:2px solid #10b981;animation:fg-pulse 2s infinite;
+    }
+    @keyframes fg-pulse{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.7);opacity:0}}
+    #fg-chat-bubble svg{width:26px;height:26px;fill:white;}
+
+    /* ── Chat panel ───────────────────────────────────── */
+    #fg-chat-panel{
+      position:fixed;bottom:100px;right:28px;z-index:9998;
+      width:400px;max-height:580px;
+      background:#161b22;border:1px solid #30363d;border-radius:16px;
+      display:flex;flex-direction:column;overflow:hidden;
+      box-shadow:0 20px 60px rgba(0,0,0,.6);
+      transform:scale(.9) translateY(20px);opacity:0;
+      transition:transform .25s cubic-bezier(.34,1.56,.64,1),opacity .2s;
+      pointer-events:none;
+    }
+    #fg-chat-panel.open{transform:scale(1) translateY(0);opacity:1;pointer-events:all;}
+
+    .fg-chat-header{
+      background:linear-gradient(135deg,#0f4c2a,#0d3320);
+      padding:14px 16px;display:flex;align-items:center;
+      justify-content:space-between;border-bottom:1px solid #30363d;
+    }
+    .fg-chat-header-title{display:flex;align-items:center;gap:10px;}
+    .fg-chat-header-title span{font-size:15px;font-weight:700;color:#10b981;letter-spacing:.5px;}
+    .fg-chat-subtitle{font-size:11px;color:#6ee7b7;margin-top:2px;}
+
+    .fg-voice-btn{
+      background:none;border:none;cursor:pointer;padding:6px;
+      border-radius:50%;display:flex;align-items:center;justify-content:center;
+      transition:background .15s;
+    }
+    .fg-voice-btn:hover{background:rgba(16,185,129,.2);}
+    .fg-voice-btn svg{width:20px;height:20px;fill:#10b981;}
+    .fg-voice-btn.listening{animation:mic-pulse 1s infinite alternate;}
+    .fg-voice-btn.listening svg{fill:#f87171;}
+    @keyframes mic-pulse{from{opacity:1}to{opacity:.4}}
+
+    .fg-close-btn{
+      background:none;border:none;color:#8b949e;cursor:pointer;
+      font-size:20px;line-height:1;padding:2px 6px;
+    }
+
+    /* ── Messages ─────────────────────────────────────── */
+    .fg-chat-messages{
+      flex:1;overflow-y:auto;padding:14px 16px;
+      display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth;
+    }
+    .fg-chat-messages::-webkit-scrollbar{width:4px;}
+    .fg-chat-messages::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px;}
+
+    .fg-msg{display:flex;flex-direction:column;gap:4px;}
+    .fg-msg.user{align-items:flex-end;}
+    .fg-msg.bot {align-items:flex-start;}
+    .fg-msg-bubble{
+      max-width:85%;padding:10px 14px;border-radius:14px;
+      font-size:13.5px;line-height:1.6;word-break:break-word;
+    }
+    .fg-msg.user .fg-msg-bubble{
+      background:linear-gradient(135deg,#10b981,#06b6d4);
+      color:white;border-bottom-right-radius:4px;
+    }
+    .fg-msg.bot .fg-msg-bubble{
+      background:#1c2431;color:#c9d1d9;
+      border:1px solid #30363d;border-bottom-left-radius:4px;
+    }
+    .fg-msg-time{font-size:11px;color:#484f58;margin:0 4px;}
+
+    /* ── Typing indicator ─────────────────────────────── */
+    .fg-typing{
+      display:flex;align-items:center;gap:5px;padding:10px 14px;
+      background:#1c2431;border:1px solid #30363d;
+      border-radius:14px;border-bottom-left-radius:4px;width:fit-content;
+    }
+    .fg-typing span{
+      width:7px;height:7px;border-radius:50%;background:#10b981;
+      animation:fg-bounce .8s infinite alternate;
+    }
+    .fg-typing span:nth-child(2){animation-delay:.2s;}
+    .fg-typing span:nth-child(3){animation-delay:.4s;}
+    @keyframes fg-bounce{from{transform:translateY(0)}to{transform:translateY(-6px)}}
+
+    /* ── Suggestion chips ─────────────────────────────── */
+    .fg-chat-suggestions{
+      padding:0 12px 10px;display:flex;flex-wrap:wrap;gap:6px;
+    }
+    .fg-suggestion-chip{
+      background:#1c2431;border:1px solid #30363d;border-radius:20px;
+      padding:5px 12px;font-size:12px;color:#8b949e;
+      cursor:pointer;transition:all .15s;white-space:nowrap;
+    }
+    .fg-suggestion-chip:hover{border-color:#10b981;color:#10b981;background:rgba(16,185,129,.1);}
+
+    /* ── Input row ────────────────────────────────────── */
+    .fg-chat-input-row{
+      padding:12px 16px;border-top:1px solid #30363d;
+      display:flex;gap:8px;align-items:flex-end;
+    }
+    #fg-chat-input{
+      flex:1;background:#0d1117;border:1px solid #30363d;
+      border-radius:10px;padding:9px 13px;color:#f1f5f9;
+      font-size:13.5px;resize:none;max-height:100px;
+      outline:none;font-family:inherit;line-height:1.5;
+    }
+    #fg-chat-input:focus{border-color:#10b981;}
+    #fg-chat-input::placeholder{color:#484f58;}
+    #fg-chat-send{
+      background:linear-gradient(135deg,#10b981,#06b6d4);
+      border:none;border-radius:10px;width:38px;height:38px;
+      cursor:pointer;display:flex;align-items:center;
+      justify-content:center;flex-shrink:0;transition:opacity .15s;
+    }
+    #fg-chat-send:hover{opacity:.85;}
+    #fg-chat-send svg{width:18px;height:18px;fill:white;}
+
+    /* ── Voice bar ────────────────────────────────────── */
+    #fg-voice-bar{
+      position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+      background:#161b22;border:1px solid #30363d;border-bottom:none;
+      border-radius:12px 12px 0 0;padding:14px 24px;z-index:9997;
+      display:none;align-items:center;gap:14px;
+      box-shadow:0 -8px 30px rgba(0,0,0,.5);min-width:340px;
+    }
+    #fg-voice-bar.active{display:flex;}
+    .fg-voice-waves{display:flex;align-items:center;gap:3px;}
+    .fg-voice-waves span{
+      width:3px;height:20px;background:#10b981;border-radius:2px;
+      animation:fg-voicewave .6s infinite alternate;
+    }
+    .fg-voice-waves span:nth-child(2){animation-delay:.1s;height:28px;}
+    .fg-voice-waves span:nth-child(3){animation-delay:.2s;height:16px;}
+    .fg-voice-waves span:nth-child(4){animation-delay:.3s;height:32px;}
+    .fg-voice-waves span:nth-child(5){animation-delay:.4s;height:20px;}
+    @keyframes fg-voicewave{from{transform:scaleY(1)}to{transform:scaleY(.3)}}
+    #fg-voice-transcript{flex:1;color:#c9d1d9;font-size:14px;font-style:italic;}
+    #fg-voice-cancel{
+      background:none;border:1px solid #f87171;color:#f87171;
+      cursor:pointer;font-size:13px;padding:4px 10px;border-radius:6px;
+      transition:background .15s;
+    }
+    #fg-voice-cancel:hover{background:rgba(248,113,113,.1);}
+
+    /* ── Officer cards ────────────────────────────────── */
+    .fg-officer-card{
+      background:#1c2431;border:1px solid #30363d;border-radius:10px;
+      padding:14px;display:flex;align-items:center;
+      justify-content:space-between;margin-bottom:8px;
+    }
+    .fg-officer-name{font-size:14px;font-weight:600;color:#f1f5f9;}
+    .fg-officer-contact{font-size:12px;color:#8b949e;}
+    .fg-officer-badges{display:flex;gap:4px;margin-top:4px;}
+    .fg-badge-risk{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;}
+    .fg-badge-risk.HIGH  {background:rgba(220,38,38,.2);color:#f87171;}
+    .fg-badge-risk.MEDIUM{background:rgba(234,179,8,.2);color:#fbbf24;}
+    .fg-badge-risk.LOW   {background:rgba(34,197,94,.2);color:#4ade80;}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ HEADER ══ -->
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      ForestGuard
+    </div>
+    <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.75rem;color:var(--text-muted);">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Connecting...</span>
+    </div>
+
+  </header>
+
+  <!-- ══ SIDEBAR ══ -->
+  <aside class="sidebar">
+
+    <!-- ── EXPLORE MODE (always visible, no login) ── -->
+    <div id="explore-panel">
+
+      <!-- Header -->
+      <div class="panel" style="padding:0.75rem 0.9rem;">
+        <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent-green);margin-bottom:0.3rem;">🌿 Live Forest Monitor</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);">5 Telangana forests · Real-time satellite analysis</div>
+        <div style="display:flex;gap:0.4rem;margin-top:0.6rem;flex-wrap:wrap;" id="risk-summary-chips">
+          <span style="font-size:0.7rem;background:rgba(239,68,68,0.15);color:#ef4444;padding:0.2rem 0.5rem;border-radius:20px;" id="chip-high">● High: —</span>
+          <span style="font-size:0.7rem;background:rgba(245,158,11,0.15);color:#f59e0b;padding:0.2rem 0.5rem;border-radius:20px;" id="chip-med">● Medium: —</span>
+          <span style="font-size:0.7rem;background:rgba(16,185,129,0.15);color:#10b981;padding:0.2rem 0.5rem;border-radius:20px;" id="chip-low">● Low: —</span>
+        </div>
+      </div>
+
+      <!-- Forest Cards -->
+      <div id="forest-list" style="display:flex;flex-direction:column;gap:0.5rem;padding:0 0.1rem;">
+        <div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:0.8rem;">
+          <div class="spinner-sm" style="margin:0 auto 0.5rem;"></div>
+          Loading satellite data...
+        </div>
+      </div>
+
+      <!-- Admin login link -->
+      <div style="padding:0.6rem 0.9rem;border-top:1px solid var(--border);margin-top:0.5rem;">
+        <button onclick="showAdminLogin()" class="btn btn-ghost" style="width:100%;justify-content:center;font-size:0.75rem;color:var(--text-muted);">
+          ⚙ Admin Login
+        </button>
+      </div>
+    </div>
+
+    <!-- ── ADMIN LOGIN (hidden by default) ── -->
+    <div id="admin-login-panel" style="display:none;" class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+        <div style="font-size:0.85rem;font-weight:600;">Admin Access</div>
+        <button onclick="hideAdminLogin()" class="btn btn-ghost btn-xs">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <input type="text" id="login-email" placeholder="Email">
+        <input type="password" id="login-password" placeholder="Password">
+        <button class="btn btn-primary" id="btn-login" style="justify-content:center;">🔐 Sign In</button>
+      </div>
+    </div>
+
+    <!-- ── ADMIN DASHBOARD (shown after login) ── -->
+    <div id="enterprise-dashboard" style="display:none;">
+
+      <!-- Session Header -->
+      <div class="panel" style="padding:0.6rem 0.9rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <span class="status-dot online"></span>
+            <span style="font-size:0.82rem;font-weight:600;color:var(--accent-green);">Active Session</span>
+            <span class="role-tag" id="user-role-badge">ADMIN</span>
+          </div>
+          <div style="display:flex;gap:0.3rem;">
+            <button class="btn btn-ghost btn-xs" id="btn-admin" onclick="openAdminModal()" style="display:none;">⚙ Admin</button>
+            <button class="btn btn-ghost btn-xs" onclick="logout()">Logout</button>
+          </div>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.25rem;" id="user-name-display"></div>
+      </div>
+
+      <!-- Overview Stats -->
+      <div class="panel" id="overview-panel">
+        <div class="panel-header">OVERVIEW</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;">
+          <div class="stat-card"><div class="stat-label">Total AOIs</div><div class="stat-value" id="stat-total">—</div></div>
+          <div class="stat-card" style="border-color:#ef4444;"><div class="stat-label">High Risk</div><div class="stat-value" style="color:#ef4444;" id="stat-high">—</div></div>
+          <div class="stat-card" style="border-color:#f59e0b;"><div class="stat-label">Alerts</div><div class="stat-value" style="color:#f59e0b;" id="stat-alerts">—</div></div>
+        </div>
+      </div>
+
+      <!-- New AOI Panel -->
+      <div class="panel" id="create-aoi-panel">
+        <div class="panel-header">NEW MONITORING AREA</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.6rem;">Draw a polygon on the map, then name and save it.</div>
+        <div style="display:flex;gap:0.4rem;">
+          <input type="text" id="aoi-name-input" placeholder="Area name..." style="flex:1;">
+          <button class="btn btn-primary btn-sm" id="btn-save-aoi" onclick="saveAOI()">Save AOI</button>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:0;padding:0 0.5rem;" class="tabs">
+        <div class="tab active" onclick="switchTab('aois')">🌿 AOIs</div>
+        <div class="tab" onclick="switchTab('alerts')">🔔 Alerts</div>
+        <div class="tab" onclick="switchTab('compare')">📊 Compare</div>
+      </div>
+
+      <!-- AOI List -->
+      <div class="tab-content active" id="tab-aois">
+        <div id="aoi-list"></div>
+      </div>
+
+      <!-- Alerts List -->
+      <div class="tab-content" id="tab-alerts">
+        <div style="display:flex;gap:0.4rem;padding:0.4rem 0;flex-wrap:wrap;">
+          <select id="alert-filter-risk" onchange="loadAlerts()" class="btn btn-ghost btn-xs" style="flex:1;">
+            <option value="">All Risks</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+          <select id="alert-filter-resolved" onchange="loadAlerts()" class="btn btn-ghost btn-xs" style="flex:1;">
+            <option value="">All Status</option>
+            <option value="false">Unresolved</option>
+            <option value="true">Resolved</option>
+          </select>
+        </div>
+        <div id="alerts-list"></div>
+      </div>
+
+      <!-- Compare -->
+      <div class="tab-content" id="tab-compare">
+        <button class="btn btn-primary" onclick="showCompareModal()" style="width:100%;justify-content:center;margin:0.5rem 0;">📊 Compare AOIs</button>
+      </div>
+
+
+    </div>
+  </aside>
+
+  <!-- ══ MAP ══ -->
+  <main>
+    <div id="time-control">
+      <input type="range" id="ndvi-slider" min="0" max="5" step="1">
+      <span id="year-label"></span>
+    </div>
+    <div id="map"></div>
+
+    <!-- NDVI Chart Panel (slides up from bottom) -->
+    <div id="ndvi-panel">
+      <div class="ndvi-header">
+        <div>
+          <div class="ndvi-title" id="ndvi-panel-title">NDVI Trend</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);" id="ndvi-panel-meta"></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <span id="ndvi-risk-badge" class="risk-badge"></span>
+          <a id="btn-download-report" href="#" target="_blank" class="btn btn-ghost btn-xs">📄 Report</a>
+          <button class="btn btn-ghost btn-xs" onclick="closeNDVIPanel()">✕ Close</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:start;">
+        <div id="ndvi-chart-container">
+          <canvas id="ndvi-chart"></canvas>
+        </div>
+        <div id="carbon-panel" style="background:var(--bg-elevated);border-radius:8px;padding:0.75rem;min-width:160px;border:1px solid var(--border);">
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.05em;">Carbon Impact</div>
+          <div style="margin-bottom:0.5rem;">
+            <div style="font-size:0.7rem;color:var(--text-muted);">Carbon Lost</div>
+            <div style="font-size:1.1rem;font-weight:700;font-family:var(--font-mono);" id="carbon-loss-val">—</div>
+            <div style="font-size:0.68rem;color:var(--text-muted);">tons</div>
+          </div>
+          <div style="margin-bottom:0.5rem;">
+            <div style="font-size:0.7rem;color:var(--text-muted);">CO₂ Equivalent</div>
+            <div style="font-size:1.1rem;font-weight:700;font-family:var(--font-mono);" id="co2-val">—</div>
+            <div style="font-size:0.68rem;color:var(--text-muted);">tons CO₂</div>
+          </div>
+          <div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">Area</div>
+            <div style="font-size:0.9rem;font-weight:600;font-family:var(--font-mono);" id="area-val">—</div>
+            <div style="font-size:0.68rem;color:var(--text-muted);">hectares</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ══ ADMIN MODAL ══ -->
+<div class="modal-overlay" id="admin-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>⚙ Admin Panel</span>
+      <button class="btn btn-ghost btn-xs" onclick="closeAdminModal()">✕</button>
+    </div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchAdminTab('users')">👥 Users</div>
+      <div class="tab" onclick="switchAdminTab('invites')">🔑 Invites</div>
+      <div class="tab" onclick="switchAdminTab('webhook')">🔗 Webhook</div>
+      <button class="tab-btn" onclick="switchAdminTab('officers')" id="tab-officers"
+        style="padding:8px 16px;background:none;border:none;cursor:pointer;
+               border-bottom:2px solid transparent;color:#8b949e;font-size:13px;">📡 Officers</button>
+    </div>
+
+    <!-- Users Tab -->
+    <div class="tab-content active" id="admin-tab-users">
+      <div id="users-list" style="margin-bottom:0.75rem;max-height:180px;overflow-y:auto;"></div>
+      <div class="divider"></div>
+      <div style="font-size:0.78rem;font-weight:600;margin:0.6rem 0 0.4rem;">Add New User</div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="text" id="new-user-email" placeholder="user@org.com">
+        </div>
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="new-user-name" placeholder="Full Name">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="new-user-password" placeholder="Password">
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select id="new-user-role">
+            <option value="viewer">Viewer</option>
+            <option value="analyst">Analyst</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="createUser()" style="justify-content:center;">Create User</button>
+      </div>
+    </div>
+
+    <!-- Invites Tab -->
+    <div class="tab-content" id="admin-tab-invites">
+      <div class="modal-body">
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
+          Generate invite codes so analysts or viewers can self-register and join your organization.
+        </p>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;">
+          <select id="invite-role" style="flex:1;min-width:100px;">
+            <option value="analyst">Analyst</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <select id="invite-uses" style="flex:1;min-width:100px;">
+            <option value="1">1 use</option>
+            <option value="5">5 uses</option>
+            <option value="10">10 uses</option>
+            <option value="-1">Unlimited</option>
+          </select>
+          <select id="invite-expires" style="flex:1;min-width:100px;">
+            <option value="">Never expires</option>
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+          </select>
+          <button class="btn btn-primary" onclick="generateInviteCode()" style="white-space:nowrap;">+ Generate Code</button>
+        </div>
+        <div id="invite-codes-list" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:0.4rem;"></div>
+      </div>
+    </div>
+
+    <!-- Webhook Tab -->
+    <div class="tab-content" id="admin-tab-webhook">
+      <div class="modal-body">
+        <p style="font-size:0.8rem;color:var(--text-muted);">
+          Configure a webhook URL to receive real-time deforestation alerts when high or medium risk is detected.
+        </p>
+        <div class="form-group">
+          <label>Webhook URL</label>
+          <input type="url" id="webhook-url-input" placeholder="https://your-endpoint.com/forestguard-alerts">
+        </div>
+        <button class="btn btn-primary" onclick="saveWebhook()" style="justify-content:center;">Save Webhook URL</button>
+        <div id="webhook-status" style="font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="admin-tab-officers" style="display:none;">
+  <h3 style="color:#10b981;font-size:15px;margin:0 0 8px;">Alert Officers</h3>
+  <p style="color:#8b949e;font-size:13px;margin:0 0 20px;line-height:1.6;">
+    Officers registered here receive email (and optionally SMS) alerts automatically
+    when ForestGuard detects a HIGH or MEDIUM risk deforestation event during any scan.
+  </p>
+
+  <!-- Officer list (rendered by loadOfficers()) -->
+  <div id="fg-officer-list" style="margin-bottom:20px;"></div>
+
+  <!-- Add officer form -->
+  <div style="background:#1c2431;border-radius:10px;padding:16px;border:1px solid #30363d;">
+    <h4 style="color:#c9d1d9;font-size:13px;margin:0 0 14px;font-weight:600;">
+      + Add New Officer
+    </h4>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <input id="fg-officer-name" placeholder="Officer name *"
+             style="background:#0d1117;border:1px solid #30363d;border-radius:8px;
+                    padding:9px 12px;color:#f1f5f9;font-size:13px;outline:none;width:100%;
+                    box-sizing:border-box;">
+      <input id="fg-officer-phone" placeholder="Phone e.g. +911234567890"
+             style="background:#0d1117;border:1px solid #30363d;border-radius:8px;
+                    padding:9px 12px;color:#f1f5f9;font-size:13px;outline:none;width:100%;
+                    box-sizing:border-box;">
+    </div>
+
+    <input id="fg-officer-email" placeholder="Email address"
+           style="width:100%;background:#0d1117;border:1px solid #30363d;
+                  border-radius:8px;padding:9px 12px;color:#f1f5f9;font-size:13px;
+                  outline:none;box-sizing:border-box;margin-bottom:12px;">
+
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">
+      <span style="color:#8b949e;font-size:12px;white-space:nowrap;">Alert for:</span>
+      <label style="color:#f87171;font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" class="fg-alert-type" value="HIGH" checked> HIGH
+      </label>
+      <label style="color:#fbbf24;font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" class="fg-alert-type" value="MEDIUM" checked> MEDIUM
+      </label>
+      <label style="color:#4ade80;font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" class="fg-alert-type" value="LOW"> LOW
+      </label>
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <button onclick="addOfficer()"
+              style="flex:1;background:#10b981;border:none;color:white;
+                     border-radius:8px;padding:10px;cursor:pointer;
+                     font-size:13px;font-weight:600;">
+        Add Officer
+      </button>
+      <button id="fg-test-alert-btn" onclick="sendTestAlert()"
+              style="background:#1c2431;border:1px solid #30363d;color:#8b949e;
+                     border-radius:8px;padding:10px 14px;cursor:pointer;
+                     font-size:13px;white-space:nowrap;">
+        Send Test Alert
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ COMPARE MODAL ══ -->
+<div class="modal-overlay" id="compare-modal">
+  <div class="modal" style="width:720px;max-width:96vw;">
+    <div class="modal-header">
+      <span>📊 NDVI Forest Comparison</span>
+      <button class="btn btn-ghost btn-xs" onclick="document.getElementById('compare-modal').classList.remove('visible')">✕</button>
+    </div>
+
+    <!-- Forest selectors + run button -->
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;align-items:center;flex-wrap:wrap;">
+      <select id="compare-aoi-1" style="flex:1;min-width:140px;">
+        <option value="">Forest 1…</option>
+      </select>
+      <span style="color:var(--text-muted);font-size:0.8rem;">vs</span>
+      <select id="compare-aoi-2" style="flex:1;min-width:140px;">
+        <option value="">Forest 2…</option>
+      </select>
+      <button class="btn btn-primary btn-xs" onclick="runComparison()" style="white-space:nowrap;">▶ Compare</button>
+    </div>
+
+    <!-- Status / error area -->
+    <div id="compare-result"></div>
+
+    <!-- Chart -->
+    <div id="compare-chart-container" style="height:240px;position:relative;margin-top:0.5rem;">
+      <canvas id="compare-chart"></canvas>
+    </div>
+
+    <!-- Summary cards -->
+    <div id="compare-summary" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;"></div>
+  </div>
+</div>
+
+<!-- ── Floating chat bubble ── -->
+<button id="fg-chat-bubble" title="Ask ForestGuard AI">
+  <div class="pulse-ring"></div>
+  <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 9h-2V5h2v6zm0 4h-2v-2h2v2z"/></svg>
+</button>
+
+<!-- ── Chat panel ── -->
+<div id="fg-chat-panel">
+  <div class="fg-chat-header">
+    <div class="fg-chat-header-title">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="#10b981">
+        <path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/>
+      </svg>
+      <div>
+        <span>ForestGuard AI</span>
+        <div class="fg-chat-subtitle">Powered by Gemini AI · free tier</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center;">
+      <button class="fg-voice-btn" id="fg-header-voice-btn" title="Voice assistant">
+        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+      </button>
+      <button class="fg-close-btn">×</button>
+    </div>
+  </div>
+
+  <div class="fg-chat-messages" id="fg-chat-messages"></div>
+
+  <div class="fg-chat-suggestions" id="fg-chat-suggestions">
+    <span class="fg-suggestion-chip">NDVI formula</span>
+    <span class="fg-suggestion-chip">Risk score</span>
+    <span class="fg-suggestion-chip">CO₂ calc</span>
+    <span class="fg-suggestion-chip">FHS formula</span>
+    <span class="fg-suggestion-chip">8-stage pipeline</span>
+    <span class="fg-suggestion-chip">CUSUM algo</span>
+    <span class="fg-suggestion-chip">Fire detection</span>
+    <span class="fg-suggestion-chip">Hotspot analysis</span>
+  </div>
+
+  <div class="fg-chat-input-row">
+    <textarea id="fg-chat-input" rows="1"
+      placeholder="Ask anything about ForestGuard…"></textarea>
+    <button id="fg-chat-send">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ── Voice indicator ── -->
+<div id="fg-voice-bar">
+  <div class="fg-voice-waves">
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div id="fg-voice-transcript">Listening…</div>
+  <button id="fg-voice-cancel">Cancel</button>
+</div>
+
+
+<!-- Scripts -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/assets/prompt.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>
+
