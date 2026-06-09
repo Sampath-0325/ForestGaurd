@@ -68,6 +68,7 @@ def compute_risk_score(ndvi_series: dict, multi_index: Optional[dict] = None) ->
     # Recalibrated for Indian tropical forests:
     # Indian forests decline slowly (-0.001 to -0.003/yr), not Amazon-style clear-cuts
     # These thresholds are mathematically correct for that scale
+    
     risk_level = (
         "HIGH"   if risk_score >= 0.4 else
         "MEDIUM" if risk_score >= 0.12 else
