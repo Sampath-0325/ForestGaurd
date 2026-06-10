@@ -1,4 +1,4 @@
-# 🌿 ForestGuard Enterprise
+#  ForestGuard Enterprise
 
 ## Intelligent Deforestation Monitoring & Early Warning System
 
@@ -6,13 +6,13 @@ ForestGuard Enterprise is an AI-powered deforestation monitoring platform that c
 
 ---
 
-## 📌 Project Overview
+##  Project Overview
 
 ForestGuard continuously monitors Areas of Interest (AOIs) using satellite data from Landsat and Sentinel missions. The system analyzes vegetation health trends, detects anomalies, estimates carbon loss, and generates risk alerts for forest officers and administrators.
 
 ---
 
-## 🚀 Key Features
+##  Key Features
 
 ### Satellite-Based Monitoring
 
@@ -68,7 +68,7 @@ ForestGuard continuously monitors Areas of Interest (AOIs) using satellite data 
 
 ---
 
-## 🏗 System Architecture
+##  System Architecture
 
 ### Backend
 
@@ -94,7 +94,7 @@ ForestGuard continuously monitors Areas of Interest (AOIs) using satellite data 
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```text
 Deforestation/
@@ -148,7 +148,7 @@ Deforestation/
 
 ---
 
-## ⚙️ Installation
+##  Installation
 
 ### Clone Project
 
@@ -179,7 +179,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🔐 Environment Variables
+##  Environment Variables
 
 Create a `.env` file in the project root:
 
@@ -204,7 +204,7 @@ ALERT_PHONE_NUMBER=
 
 ---
 
-## 🌎 Google Earth Engine Setup
+##  Google Earth Engine Setup
 
 Authenticate Earth Engine:
 
@@ -226,7 +226,7 @@ earthengine ls
 
 ---
 
-## ▶️ Running the Application
+##  Running the Application
 
 Start ForestGuard:
 
@@ -242,7 +242,7 @@ http://127.0.0.1:8000
 
 ---
 
-## 👤 Default Admin Credentials
+##  Default Admin Credentials
 
 Seed database:
 
@@ -259,7 +259,7 @@ Password: forestguard2024
 
 ---
 
-## 📧 Email Notifications
+##  Email Notifications
 
 For Gmail:
 
@@ -269,7 +269,7 @@ For Gmail:
 
 ---
 
-## 📈 Workflow
+##  Workflow
 
 1. User creates or selects AOI.
 2. Satellite imagery is fetched via Google Earth Engine.
@@ -282,7 +282,7 @@ For Gmail:
 
 ---
 
-## 🛠 Technologies Used
+##  Technologies Used
 
 * Python
 * FastAPI
@@ -297,7 +297,7 @@ For Gmail:
 
 ---
 
-## 👩‍💻 Developed By
+##  Developed By
 
 **Malleboina Sampath**
 
